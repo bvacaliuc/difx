@@ -5,12 +5,12 @@ from __future__ import print_function
 import platform as pf
 from sys import argv, exit, platform
 #from string import split, lower
-from os import getenv, readlink
-from os.path import islink, join, dirname, isfile
+import os
 from re import search
+from glob import glob
 
 program = 'genipppc'
-version = '0.3'
+version = '0.3-bv.1'
 verdate = '20131105'
 author  = 'Walter Brisken <wbrisken@nrao.edu>'
 
@@ -22,22 +22,23 @@ def usage(prog):
     print('<ipp path> is the install path of Intel Performance Primitives\n')
 
 def getippversion(path):
-    if islink(path):
-        path = join(dirname(path), readlink(path))
-# First try ippversion.h
-    ippheader = path+'/include/ippversion.h'
-    if not isfile(ippheader):
-        ippheader = path+'/ipp/include/ippversion.h'
-    if not isfile(ippheader):
-        ippheader = path+'/composerxe/ipp/include/ippversion.h'
-        if isfile(ippheader):
-            path += '/composerxe'
-    if not isfile(ippheader):
-        ippheader = path+'/oneapi/ipp/latest/include/ippversion.h'
-        if isfile(ippheader):
-            path += '/oneapi/ipp/latest/'
-    if not isfile(ippheader):
-        ippheader = ''
+    if os.path.islink(path):
+        path = os.path.join(os.path.dirname(path), os.readlink(path))
+    files = []
+    ippheader = ''
+    for _d,_,_ in os.walk(path):
+        files.extend(glob(os.path.join(_d,'*ippversion.h')))
+    print("Info: {}".format(files))
+    if len(files) > 0:
+        ippheader = files[0]
+        if ippheader.endswith('ipp/ippversion.h'):
+            # $IPPROOT/include/ipp/ippversion.h
+            path = os.path.dirname(os.path.dirname(os.path.dirname(ippheader)))
+        elif ippheader.endswith('include/ippversion.h'):
+            # $IPPROOT/include/ippversion.h
+            path = os.path.dirname(os.path.dirname(ippheader))
+        else:
+            print("Info: Using IPP path ", path)
 
     if (ippheader==''):
         print("Warning: ippversion.h not found, relying on IPP path ", path)
@@ -52,9 +53,8 @@ def getippversion(path):
                     exit(0)
                     if len(possibilities) > 1:
                         print('Guessing version == %s' % possibilities[-1])
-
                         return (path, possibilities[-1])
-                    
+
     else:
         print("Reading version from ", ippheader)
         major = minor = None
@@ -72,10 +72,10 @@ def getippversion(path):
             return (path, major.group(1) + "." + minor.group(1))
         print("Sorry, cannot find IPP_VERSION_STR in ", ippheader)
         exit(0)
-    
+
 # fixme: possibly should use uname to get this information
 def getarch():
-    bs = getenv('DIFXBITS') 
+    bs = os.getenv('DIFXBITS')
     if bs != None and bs != "32" and bs != "64" and bs != "128":
         print("Invalid DIFXBITS: " + bs)
         bs = None
@@ -92,7 +92,7 @@ def getarch():
 def genipppc(path, ippversion):
     # if no path supplied, take it from $IPPROOT
     if path == '':
-        path = getenv('IPPROOT')
+        path = os.getenv('IPPROOT')
     # Still not set?
     if path == None:
         print('Sorry, $IPPROOT not set and no path given')
@@ -105,6 +105,7 @@ def genipppc(path, ippversion):
     ipparch = getarch()
 
     major = int(ippversion.split('.')[0])
+    minor = int(ippversion.split('.')[1])
     out = open('ipp.pc', 'w')
     out.write('base = %s\n' % path)
     out.write('\n')
@@ -130,7 +131,6 @@ def genipppc(path, ippversion):
         out.write('Cflags: -I${base}/include\n')
 
     elif major == 7 or major == 8 or major == 9 or major >= 2017:
-        
         if platform == "darwin":
             if major < 2021:
                 out.write('Libs: -Wl,-rpath,${base}/ipp/lib -L${base}/ipp/lib -lipps -lippvm -lippcore\n')
@@ -150,9 +150,11 @@ def genipppc(path, ippversion):
             out.write('Cflags: -I${base}/ipp/include\n')
         elif major < 2021:
             out.write('Cflags: -DIPP9 -I${base}/ipp/include\n')
-        else:
+        elif major == 2021 and minor < 11:
             out.write('Cflags: -DIPP9 -I${base}/include\n') # oneapi setup
-            
+        else:
+            out.write('Cflags: -DIPP9 -I${base}/include/ipp\n') # oneapi setup 2021.11+
+
     else:
         print('Sorry, IPP %d not yet supported by this script\n' % major)
 
