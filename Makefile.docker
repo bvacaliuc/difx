@@ -1,0 +1,26 @@
+PROJECT=difx
+PROJECT_TAG := try7
+
+.PHONY: docker-image docker-run 
+
+default: usage
+
+docker-image: Dockerfile
+	docker build -t $(PROJECT):$(PROJECT_TAG) .
+
+docker-run: Dockerfile
+	docker run -it $(PROJECT):$(PROJECT_TAG) bash
+
+define USAGE
+	@echo "Usage:"
+	@echo " make <target>"
+	@echo ""
+	@echo "Targets:"
+	@echo "  docker-<command>"
+	@echo "    run         -- execute interactive shell on created image"
+	@echo "    image       -- generate a Dockerfile and a core execution environment"
+	@echo ""
+endef
+
+usage:
+	@$(call USAGE, $(PROJECT))
